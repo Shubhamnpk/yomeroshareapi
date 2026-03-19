@@ -1,0 +1,6 @@
+fastapi>=0.110
+pydantic>=2.5
+uvicorn[standard]>=0.23
+playwright>=1.41
+slowapi>=0.1.8
+python-dotenv>=1.0
