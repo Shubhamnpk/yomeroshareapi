@@ -12,17 +12,19 @@ Production-ready microservice to automate Mero Share (Nepal CDSC) IPO applicatio
 
 ## Project Structure
 ```
-mero-share-service/
-??? Dockerfile
-??? docker-compose.yml
-??? requirements.txt
-??? .env.example
-??? src/
-?   ??? main.py
-?   ??? models.py
-?   ??? meroshare.py
-?   ??? utils.py
-??? README.md
+Dockerfile
+docker-compose.yml
+requirements.txt
+.env.example
+src/
+  main.py
+  models.py
+  meroshare.py
+  utils.py
+README.md
+dps.json
+scrape_dps.py
+test.py
 ```
 
 ## Setup
@@ -30,7 +32,6 @@ mero-share-service/
 2. Build and run:
 
 ```bash
-cd mero-share-service
 docker-compose up --build
 ```
 
@@ -55,7 +56,6 @@ Use the included `test.py` script to hit endpoints without extra tools.
 
 Example:
 ```bash
-cd mero-share-service
 python test.py --test-health
 python test.py --test-dps
 python test.py --test-login --dp-id 13000 --username USER --password PASS
@@ -94,7 +94,7 @@ If the API is down, you can scrape the DP list from the login dropdown and save 
 ```bash
 python scrape_dps.py
 ```
-This writes `mero-share-service/dps.json`, which `/dps` will use automatically.
+This writes `dps.json`, which `/dps` will use automatically.
 
 ## API
 
