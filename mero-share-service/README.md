@@ -36,6 +36,20 @@ docker-compose up --build
 
 The API listens on port `8000`.
 
+## Railway Deployment
+Railway can build directly from this Dockerfile.
+1. Push this repo to GitHub.
+2. In Railway, create a new project and select “Deploy from GitHub repo”.
+3. Railway detects the Dockerfile automatically and builds the service.
+4. Set environment variables in Railway:
+   - `API_KEY` (optional but recommended)
+   - `DPS_URL` (optional)
+5. Ensure the service port is set to the Railway `PORT` variable (Dockerfile already uses it).
+
+After deployment, open the service URL and visit:
+- `/` for the landing page
+- `/api` for the API index
+
 ## Quick CLI Test
 Use the included `test.py` script to hit endpoints without extra tools.
 
@@ -52,6 +66,15 @@ python test.py --test-apply --dp-id 13000 --username USER --password PASS --crn 
 
 ## HTTPS Enforcement
 This service **requires HTTPS**. In production, put it behind an HTTPS reverse proxy (Nginx, Caddy, Traefik, Cloudflare, etc.) and pass `X-Forwarded-Proto: https`.
+
+For local development, you can allow HTTP by setting:
+```
+ALLOW_HTTP=1
+```
+or
+```
+ENV=development
+```
 
 ## API Key Behavior
 - If `X-API-Key` matches `API_KEY`, rate limiting is **disabled** for that request.
@@ -106,6 +129,16 @@ Headers:
 X-API-Key: your-secret-key
 ```
 
+Parameters:
+- `dp_id` (string, required) — Depository Participant ID
+- `username` (string, required) — Mero Share username
+- `password` (string, required) — Mero Share password
+- `crn` (string, required) — CRN number
+- `pin` (string, required) — Transaction PIN
+- `ipo_details.company_share_id` (string, required) — IPO company name or share ID
+- `ipo_details.units` (integer, required) — Kitta (units)
+- `ipo_details.bank` (string, required) — Bank name for ASBA
+
 Request body:
 ```json
 {
@@ -135,6 +168,25 @@ Response:
 }
 ```
 
+Example:
+```bash
+curl -X POST http://localhost:8000/apply-ipo \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: your-secret-key" \
+  -d '{
+    "dp_id": "13000",
+    "username": "mero_user",
+    "password": "mero_pass",
+    "crn": "1234567890",
+    "pin": "1234",
+    "ipo_details": {
+      "company_share_id": "ACME Laghubitta",
+      "units": 10,
+      "bank": "NIC ASIA Bank Limited"
+    }
+  }'
+```
+
 ### Check Allotment
 `POST /check-allotment`
 
@@ -142,6 +194,12 @@ Headers:
 ```
 X-API-Key: your-secret-key
 ```
+
+Parameters:
+- `dp_id` (string, required) — Depository Participant ID
+- `username` (string, required) — Mero Share username
+- `password` (string, required) — Mero Share password
+- `ipo_name` (string, required) — IPO name or company share ID
 
 Request body:
 ```json
@@ -168,6 +226,21 @@ Response:
 }
 ```
 
+Example:
+```bash
+curl -X POST http://localhost:8000/check-allotment \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: your-secret-key" \
+  -d '{
+    "credentials": {
+      "dpId": "13000",
+      "username": "mero_user",
+      "password": "mero_pass"
+    },
+    "ipoName": "ACME Laghubitta"
+  }'
+```
+
 ### Portfolio
 `POST /portfolio`
 
@@ -175,6 +248,11 @@ Headers:
 ```
 X-API-Key: your-secret-key
 ```
+
+Parameters:
+- `dp_id` (string, required) — Depository Participant ID
+- `username` (string, required) — Mero Share username
+- `password` (string, required) — Mero Share password
 
 Request body:
 ```json
@@ -201,6 +279,20 @@ Response:
 }
 ```
 
+Example:
+```bash
+curl -X POST http://localhost:8000/portfolio \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: your-secret-key" \
+  -d '{
+    "credentials": {
+      "dpId": "13000",
+      "username": "mero_user",
+      "password": "mero_pass"
+    }
+  }'
+```
+
 ### Test Login
 `POST /test-login`
 
@@ -208,6 +300,11 @@ Headers:
 ```
 X-API-Key: your-secret-key
 ```
+
+Parameters:
+- `dp_id` (string, required) — Depository Participant ID
+- `username` (string, required) — Mero Share username
+- `password` (string, required) — Mero Share password
 
 Request body:
 ```json
@@ -228,6 +325,20 @@ Response:
   "request_id": "e4c7d6f1-9c1a-4c7a-9a3d-5f5a9b6f27b0",
   "duration_ms": 1850
 }
+```
+
+Example:
+```bash
+curl -X POST http://localhost:8000/test-login \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: your-secret-key" \
+  -d '{
+    "credentials": {
+      "dpId": "13000",
+      "username": "mero_user",
+      "password": "mero_pass"
+    }
+  }'
 ```
 
 ### CAPTCHA Handling
