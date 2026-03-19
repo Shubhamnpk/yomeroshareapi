@@ -23,6 +23,16 @@ class ApplyIPORequest(BaseModel):
     pin: str = Field(..., min_length=1)
     ipo_details: IPODetails
 
+    @model_validator(mode="before")
+    @classmethod
+    def _map_dp_code(cls, data):
+        if isinstance(data, dict):
+            if "dp_id" not in data and "dpId" not in data and "dp_code" in data:
+                data = {**data, "dp_id": data.get("dp_code")}
+            if "dp_id" not in data and "dpId" not in data and "dpCode" in data:
+                data = {**data, "dp_id": data.get("dpCode")}
+        return data
+
 
 class ApplyIPOResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -52,7 +62,7 @@ class CheckAllotmentRequest(BaseModel):
             creds = data["credentials"] or {}
             data = {**data}
             if "dp_id" not in data and "dpId" not in data:
-                data["dp_id"] = creds.get("dpId") or creds.get("dp_id")
+                data["dp_id"] = creds.get("dpId") or creds.get("dp_id") or creds.get("dpCode") or creds.get("dp_code")
             data.setdefault("username", creds.get("username"))
             data.setdefault("password", creds.get("password"))
         return data
@@ -87,7 +97,7 @@ class PortfolioRequest(BaseModel):
             creds = data["credentials"] or {}
             data = {**data}
             if "dp_id" not in data and "dpId" not in data:
-                data["dp_id"] = creds.get("dpId") or creds.get("dp_id")
+                data["dp_id"] = creds.get("dpId") or creds.get("dp_id") or creds.get("dpCode") or creds.get("dp_code")
             data.setdefault("username", creds.get("username"))
             data.setdefault("password", creds.get("password"))
         return data
@@ -130,7 +140,7 @@ class TestLoginRequest(BaseModel):
             creds = data["credentials"] or {}
             data = {**data}
             if "dp_id" not in data and "dpId" not in data:
-                data["dp_id"] = creds.get("dpId") or creds.get("dp_id")
+                data["dp_id"] = creds.get("dpId") or creds.get("dp_id") or creds.get("dpCode") or creds.get("dp_code")
             data.setdefault("username", creds.get("username"))
             data.setdefault("password", creds.get("password"))
         return data
@@ -160,4 +170,3 @@ class DpsItem(BaseModel):
     id: str
     name: str
     code: str
-

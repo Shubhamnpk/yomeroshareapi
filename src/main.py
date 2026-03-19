@@ -170,6 +170,7 @@ async def index() -> HTMLResponse:
             <p>This microservice automates Mero Share (CDSC Nepal) flows using FastAPI + Playwright.</p>
             <p>Use the API to apply IPOs, check allotments, sync portfolio, and fetch DP list.</p>
             <a class="btn" href="/api">Open API Index</a>
+            <a class="btn" href="/ui" style="margin-left:8px;background:#60a5fa;color:#0b1220;">Open UI</a>
           </div>
           <div class="grid">
             <div class="card">
@@ -406,6 +407,367 @@ print(resp.json())</code></pre>
               responseBox.textContent = 'Request failed: ' + err;
             }
           });
+        </script>
+      </body>
+    </html>
+    """
+    return HTMLResponse(content=html)
+
+
+@app.get('/ui', response_class=HTMLResponse)
+async def ui() -> HTMLResponse:
+    html = """
+    <!doctype html>
+    <html lang="en">
+      <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width,initial-scale=1" />
+        <title>Mero Share Automation UI</title>
+        <style>
+          :root {
+            --bg: #0f172a;
+            --card: #111827;
+            --accent: #22c55e;
+            --muted: #94a3b8;
+            --text: #e2e8f0;
+          }
+          * { box-sizing: border-box; }
+          body {
+            margin: 0;
+            font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, sans-serif;
+            background: radial-gradient(1000px 600px at 10% -10%, #1f2937, transparent),
+                        radial-gradient(1000px 600px at 100% 0%, #0b3b2a, transparent),
+                        var(--bg);
+            color: var(--text);
+          }
+          .wrap { max-width: 1100px; margin: 0 auto; padding: 36px 20px; }
+          .hero { background: #0b1220; border: 1px solid rgba(148,163,184,0.2); border-radius: 16px; padding: 20px; }
+          h1 { margin: 0 0 8px; font-size: 28px; }
+          p { margin: 6px 0; color: var(--muted); }
+          .grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); margin-top: 16px; }
+          .card { background: var(--card); border: 1px solid rgba(148,163,184,0.15); border-radius: 14px; padding: 16px; }
+          label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+          input, select, textarea, button {
+            width: 100%;
+            background: #0b1220;
+            color: var(--text);
+            border: 1px solid rgba(148,163,184,0.3);
+            border-radius: 8px;
+            padding: 8px 10px;
+            font-family: inherit;
+          }
+          textarea { min-height: 160px; }
+          button { background: var(--accent); color: #0b3b2a; font-weight: 700; cursor: pointer; }
+          .row { display: flex; gap: 10px; flex-wrap: wrap; }
+          .row > div { flex: 1 1 160px; }
+          .muted { color: var(--muted); font-size: 12px; }
+          pre { background: #0b1220; border-radius: 10px; padding: 12px; overflow: auto; }
+          .actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
+          .btn-secondary { background: #60a5fa; color: #0b1220; }
+          .btn-ghost { background: transparent; border: 1px solid rgba(148,163,184,0.3); color: var(--text); }
+          .dp-select { min-height: 120px; }
+          .code-toggle { margin-top: 12px; }
+          .code-box { display: none; }
+        </style>
+      </head>
+      <body>
+        <div class="wrap">
+          <div class="hero">
+            <h1>Mero Share Automation UI</h1>
+            <p>Enter your credentials once and run login, portfolio, allotment, and IPO apply from here.</p>
+            <p class="muted">Credentials are used only for the request and are not stored.</p>
+          </div>
+
+          <div class="grid">
+            <div class="card">
+              <h3>Auth</h3>
+              <label>API Key (optional)</label>
+              <input id="apiKey" placeholder="your-secret-key" />
+              <label style="margin-top:10px;">DP Search</label>
+              <input id="dpSearch" placeholder="Search DP name or ID" />
+              <label>DP List (Code)</label>
+              <select id="dpSelect" class="dp-select" size="8"></select>
+              <div id="dpStatus" class="muted">Loading DP list...</div>
+              <label style="margin-top:10px;">DPS Code</label>
+              <input id="dpId" placeholder="19000" />
+              <label>Username</label>
+              <input id="username" placeholder="mero_user" />
+              <label>Password</label>
+              <input id="password" type="password" placeholder="mero_pass" />
+              <label>CRN</label>
+              <input id="crn" placeholder="1234567890" />
+              <label>Transaction PIN</label>
+              <input id="pin" type="password" placeholder="1234" />
+            </div>
+
+            <div class="card">
+              <h3>Apply IPO</h3>
+              <label>Company Share ID / Name</label>
+              <input id="companyShareId" placeholder="ACME Laghubitta" />
+              <label>Units (Kitta)</label>
+              <input id="units" type="number" min="1" value="10" />
+              <label>Bank</label>
+              <input id="bank" placeholder="NIC ASIA Bank Limited" />
+              <div class="actions">
+                <button id="applyBtn">Apply IPO</button>
+              </div>
+            </div>
+
+            <div class="card">
+              <h3>Check Allotment</h3>
+              <label>IPO Name</label>
+              <input id="ipoName" placeholder="ACME Laghubitta" />
+              <div class="actions">
+                <button id="allotBtn">Check Allotment</button>
+              </div>
+            </div>
+
+            <div class="card">
+              <h3>Quick Actions</h3>
+              <div class="actions">
+                <button id="loginBtn">Test Login</button>
+                <button id="portfolioBtn" class="btn-secondary">Portfolio</button>
+                <button id="runAllBtn" class="btn-ghost">Run All</button>
+              </div>
+              <p class="muted">Run All = Test Login → Portfolio → Check Allotment (if IPO name provided).</p>
+            </div>
+          </div>
+
+          <div class="card" style="margin-top:16px;">
+            <h3>Response</h3>
+            <pre id="responseBox">Waiting for request...</pre>
+            <div class="actions code-toggle">
+              <button id="toggleCodeBtn" class="btn-ghost">Show Code Examples</button>
+            </div>
+            <div id="codeBox" class="code-box">
+              <p class="muted">Apply IPO (curl) - live values</p>
+              <pre><code id="liveCurl"></code></pre>
+              <p class="muted">Apply IPO (Python) - live values</p>
+              <pre><code id="livePython"></code></pre>
+            </div>
+          </div>
+
+          <p class="muted"><a href="/api" style="color:#60a5fa;text-decoration:none;">Back to API Index</a></p>
+        </div>
+
+        <script>
+          const apiKeyEl = document.getElementById('apiKey');
+          const dpIdEl = document.getElementById('dpId');
+          const dpSearchEl = document.getElementById('dpSearch');
+          const dpSelectEl = document.getElementById('dpSelect');
+          const dpStatusEl = document.getElementById('dpStatus');
+          const userEl = document.getElementById('username');
+          const passEl = document.getElementById('password');
+          const crnEl = document.getElementById('crn');
+          const pinEl = document.getElementById('pin');
+          const companyEl = document.getElementById('companyShareId');
+          const unitsEl = document.getElementById('units');
+          const bankEl = document.getElementById('bank');
+          const ipoNameEl = document.getElementById('ipoName');
+          const responseBox = document.getElementById('responseBox');
+          const codeBox = document.getElementById('codeBox');
+          const toggleCodeBtn = document.getElementById('toggleCodeBtn');
+
+          const headers = () => {
+            const h = { 'Content-Type': 'application/json' };
+            const key = apiKeyEl.value.trim();
+            if (key) h['X-API-Key'] = key;
+            return h;
+          };
+
+          const credentials = () => {
+            const dpId = dpIdEl.value.trim();
+            const username = userEl.value.trim();
+            const password = passEl.value.trim();
+            const creds = {};
+            if (dpId) creds.dpId = dpId;
+            if (username) creds.username = username;
+            if (password) creds.password = password;
+            return creds;
+          };
+
+          const applyPayload = () => {
+            const payload = {};
+            const dp_id = dpIdEl.value.trim();
+            const username = userEl.value.trim();
+            const password = passEl.value.trim();
+            const crn = crnEl.value.trim();
+            const pin = pinEl.value.trim();
+            if (dp_id) payload.dp_id = dp_id;
+            if (username) payload.username = username;
+            if (password) payload.password = password;
+            if (crn) payload.crn = crn;
+            if (pin) payload.pin = pin;
+
+            const details = {};
+            const company_share_id = companyEl.value.trim();
+            const bank = bankEl.value.trim();
+            if (company_share_id) details.company_share_id = company_share_id;
+            if (bank) details.bank = bank;
+            const units = parseInt(unitsEl.value, 10);
+            if (!Number.isNaN(units)) details.units = units;
+            if (Object.keys(details).length > 0) payload.ipo_details = details;
+            return payload;
+          };
+
+          function renderDps(list) {
+            const options = ['<option value="">Select DP...</option>'];
+            list.forEach(item => {
+              const code = item.code || '';
+              const id = item.id || '';
+              const value = code || id || '';
+              if (!value) return;
+              const suffix = id && code && id !== code ? ` (id: ${id})` : '';
+              const text = `${value} - ${item.name}${suffix}`;
+              options.push(`<option value="${value}">${text}</option>`);
+            });
+            dpSelectEl.innerHTML = options.join('');
+            dpStatusEl.textContent = `Loaded ${list.length} DPS entries`;
+          }
+
+          async function loadDps() {
+            try {
+              dpStatusEl.textContent = 'Loading DP list...';
+              const res = await fetch('/dps', { headers: headers() });
+              console.log('DPS fetch status', res.status);
+              const data = await res.json();
+              const list = Array.isArray(data) ? data : (data.items || []);
+              renderDps(list);
+              dpSearchEl.addEventListener('input', () => {
+                const q = dpSearchEl.value.trim().toLowerCase();
+                if (!q) return renderDps(list);
+                const filtered = list.filter(item =>
+                  String(item.id || '').includes(q) ||
+                  String(item.name || '').toLowerCase().includes(q) ||
+                  String(item.code || '').toLowerCase().includes(q)
+                );
+                renderDps(filtered);
+              });
+            } catch (_) {
+              dpSelectEl.innerHTML = '<option value="">Failed to load DPS</option>';
+              dpStatusEl.textContent = 'Failed to load DPS';
+            }
+          }
+
+          dpSelectEl.addEventListener('change', () => {
+            const val = dpSelectEl.value;
+            if (val) dpIdEl.value = val;
+            updateLiveCode();
+          });
+
+          async function send(path, payload) {
+            responseBox.textContent = 'Sending...';
+            try {
+              const res = await fetch(path, { method: 'POST', headers: headers(), body: JSON.stringify(payload) });
+              const text = await res.text();
+              let out = text;
+              try { out = JSON.stringify(JSON.parse(text), null, 2); } catch (_) {}
+              responseBox.textContent = `Status: ${res.status}\\n\\n${out}`;
+              return res.ok;
+            } catch (err) {
+              responseBox.textContent = 'Request failed: ' + err;
+              return false;
+            }
+          }
+
+          document.getElementById('loginBtn').addEventListener('click', () => {
+            const creds = credentials();
+            if (!creds.dpId || !creds.username || !creds.password) {
+              responseBox.textContent = 'Missing required: dp_id, username, password.';
+              return;
+            }
+            send('/test-login', { credentials: creds });
+          });
+
+          document.getElementById('portfolioBtn').addEventListener('click', () => {
+            const creds = credentials();
+            if (!creds.dpId || !creds.username || !creds.password) {
+              responseBox.textContent = 'Missing required: dp_id, username, password.';
+              return;
+            }
+            send('/portfolio', { credentials: creds });
+          });
+
+          document.getElementById('allotBtn').addEventListener('click', () => {
+            const ipoName = ipoNameEl.value.trim();
+            const creds = credentials();
+            if (!creds.dpId || !creds.username || !creds.password) {
+              responseBox.textContent = 'Missing required: dp_id, username, password.';
+              return;
+            }
+            if (!ipoName) {
+              responseBox.textContent = 'Missing required: ipo_name.';
+              return;
+            }
+            send('/check-allotment', { credentials: creds, ipoName });
+          });
+
+          document.getElementById('applyBtn').addEventListener('click', () => {
+            const payload = applyPayload();
+            const missing = [];
+            if (!payload.dp_id) missing.push('dp_id');
+            if (!payload.username) missing.push('username');
+            if (!payload.password) missing.push('password');
+            if (!payload.crn) missing.push('crn');
+            if (!payload.pin) missing.push('pin');
+            if (!payload.ipo_details || !payload.ipo_details.company_share_id) missing.push('ipo_details.company_share_id');
+            if (!payload.ipo_details || !payload.ipo_details.bank) missing.push('ipo_details.bank');
+            if (missing.length) {
+              responseBox.textContent = 'Missing required: ' + missing.join(', ');
+              return;
+            }
+            send('/apply-ipo', payload);
+          });
+
+          document.getElementById('runAllBtn').addEventListener('click', async () => {
+            const creds = credentials();
+            if (!creds.dpId || !creds.username || !creds.password) {
+              responseBox.textContent = 'Missing required: dp_id, username, password.';
+              return;
+            }
+            const ok = await send('/test-login', { credentials: creds });
+            if (!ok) return;
+            await send('/portfolio', { credentials: creds });
+            const ipoName = ipoNameEl.value.trim();
+            if (ipoName) {
+              await send('/check-allotment', { credentials: creds, ipoName });
+            }
+          });
+
+          toggleCodeBtn.addEventListener('click', () => {
+            const visible = codeBox.style.display === 'block';
+            codeBox.style.display = visible ? 'none' : 'block';
+            toggleCodeBtn.textContent = visible ? 'Show Code Examples' : 'Hide Code Examples';
+          });
+
+          function updateLiveCode() {
+            const payload = applyPayload();
+            const apiKey = apiKeyEl.value.trim() || 'your-secret-key';
+            const pretty = JSON.stringify(payload, null, 2);
+            const curl = [
+              'curl -X POST http://localhost:8000/apply-ipo \\\\',
+              '  -H \"Content-Type: application/json\" \\\\',
+              `  -H \"X-API-Key: ${apiKey}\" \\\\`,
+              `  -d '${pretty.replace(/'/g, \"'\\\\''\")}'`
+            ].join('\\n');
+            const py = [
+              'import requests',
+              '',
+              'url = \"http://localhost:8000/apply-ipo\"',
+              `headers = {\"Content-Type\": \"application/json\", \"X-API-Key\": \"${apiKey}\"}`,
+              `payload = ${pretty}`,
+              'print(requests.post(url, json=payload, headers=headers).json())'
+            ].join('\\n');
+            document.getElementById('liveCurl').textContent = curl;
+            document.getElementById('livePython').textContent = py;
+          }
+
+          [apiKeyEl, dpIdEl, userEl, passEl, crnEl, pinEl, companyEl, unitsEl, bankEl].forEach(el => {
+            el.addEventListener('input', updateLiveCode);
+          });
+
+          setTimeout(loadDps, 200);
+          updateLiveCode();
         </script>
       </body>
     </html>
