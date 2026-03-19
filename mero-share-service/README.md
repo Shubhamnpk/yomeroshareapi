@@ -57,6 +57,22 @@ This service **requires HTTPS**. In production, put it behind an HTTPS reverse p
 - If `X-API-Key` matches `API_KEY`, rate limiting is **disabled** for that request.
 - If no API key (or wrong key), requests are allowed but **rate limited** to 10/min/IP.
 
+## DPS Fetching
+The service tries to fetch DPS data from the official URL first. If that endpoint is unreachable (404/timeout), it falls back to `dps.json` (if present) and finally to a small hardcoded list.
+
+You can override the DPS source URL with:
+```
+DPS_URL=https://meroshare.cdsc.com.np/api/casba/bank/
+```
+You can also provide multiple URLs separated by commas.
+
+### Scrape DPS From Login Dropdown
+If the API is down, you can scrape the DP list from the login dropdown and save it as `dps.json`:
+```bash
+python scrape_dps.py
+```
+This writes `mero-share-service/dps.json`, which `/dps` will use automatically.
+
 ## API
 
 ### Health Check
@@ -77,16 +93,9 @@ X-API-Key: your-secret-key
 
 Response:
 ```json
-{
-  "items": [
-    { "id": "13100", "name": "NIC ASIA Bank Limited", "code": "NIC" }
-  ],
-  "count": 1,
-  "timestamp": "2026-03-19T00:00:00Z",
-  "request_id": "e4c7d6f1-9c1a-4c7a-9a3d-5f5a9b6f27b0",
-  "duration_ms": 42,
-  "message": null
-}
+[
+  { "id": "13100", "name": "NIC ASIA Bank Limited", "code": "NIC" }
+]
 ```
 
 ### Apply IPO

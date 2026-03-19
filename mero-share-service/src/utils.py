@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import logging
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Dict
@@ -12,47 +14,45 @@ def utc_now_iso() -> str:
 
 
 def fetch_dps() -> List[Dict[str, str]]:
-    url = 'https://meroshare.cdsc.com.np/api/casba/bank/'
-    try:
-        request = Request(url, headers={'User-Agent': 'mero-share-service/1.0'})
-        with urlopen(request, timeout=10) as response:
-            if response.status == 200:
-                data = json.load(response)
-                formatted = []
-                for item in data:
-                    if 'id' in item and 'name' in item and 'code' in item:
-                        formatted.append(
-                            {
-                                'id': str(item['id']),
-                                'name': item['name'],
-                                'code': item['code'],
-                            }
-                        )
-                if formatted:
-                    return formatted
-    except Exception:
-        pass
+    logger = logging.getLogger('mero-share-service')
 
-    url_alt = 'https://meroshare.cdsc.com.np/api/casba/bank'
-    try:
-        request = Request(url_alt, headers={'User-Agent': 'mero-share-service/1.0'})
+    def _try_fetch(url: str) -> List[Dict[str, str]]:
+        request = Request(url, headers={'User-Agent': 'Mozilla/5.0'})
         with urlopen(request, timeout=10) as response:
-            if response.status == 200:
-                data = json.load(response)
-                formatted = []
-                for item in data:
-                    if 'id' in item and 'name' in item and 'code' in item:
-                        formatted.append(
-                            {
-                                'id': str(item['id']),
-                                'name': item['name'],
-                                'code': item['code'],
-                            }
-                        )
-                if formatted:
-                    return formatted
-    except Exception:
-        pass
+            if response.status != 200:
+                return []
+            data = json.load(response)
+            formatted = []
+            for item in data:
+                if 'id' in item and 'name' in item and 'code' in item:
+                    formatted.append(
+                        {
+                            'id': str(item['id']),
+                            'name': item['name'],
+                            'code': item['code'],
+                        }
+                    )
+            return formatted
+
+    urls = []
+    env_url = os.getenv('DPS_URL')
+    if env_url:
+        urls.extend([u.strip() for u in env_url.split(',') if u.strip()])
+    urls.extend(
+        [
+            'https://meroshare.cdsc.com.np/api/casba/bank/',
+            'https://meroshare.cdsc.com.np/api/casba/bank',
+        ]
+    )
+
+    for url in urls:
+        try:
+            items = _try_fetch(url)
+            if items:
+                return items
+        except Exception as exc:
+            logger.info('DPS fetch failed for %s: %s', url, str(exc))
+            continue
 
     file_path = Path(__file__).resolve().parent.parent / 'dps.json'
     if file_path.exists():

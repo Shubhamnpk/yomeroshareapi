@@ -28,7 +28,6 @@ from .models import (
     CheckAllotmentRequest,
     CheckAllotmentResponse,
     DpsItem,
-    DpsResponse,
     PortfolioRequest,
     PortfolioResponse,
     TestLoginRequest,
@@ -50,14 +49,17 @@ REQUEST_TIMEOUT_SECONDS = 120
 
 app = FastAPI(title='Mero Share IPO Automation Service', version='1.0.0')
 
-limiter = Limiter(key_func=get_remote_address)
+def _rate_limit_key(request: Request) -> str:
+    header_key = request.headers.get('x-api-key')
+    if API_KEY and header_key == API_KEY:
+        return f"auth:{uuid.uuid4()}"
+    return get_remote_address(request)
+
+
+limiter = Limiter(key_func=_rate_limit_key)
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.add_middleware(SlowAPIMiddleware)
-
-
-def _is_authenticated(request: Request) -> bool:
-    return bool(getattr(request.state, 'api_key_valid', False))
 
 
 def _get_request_proto(request: Request) -> str:
@@ -80,11 +82,6 @@ async def https_enforcer(request: Request, call_next):
     return await call_next(request)
 
 
-@app.middleware('http')
-async def api_key_context(request: Request, call_next):
-    header_key = request.headers.get('x-api-key')
-    request.state.api_key_valid = bool(API_KEY and header_key == API_KEY)
-    return await call_next(request)
 
 
 @app.get('/health')
@@ -93,7 +90,7 @@ async def health() -> dict:
 
 
 @app.post('/apply-ipo', response_model=ApplyIPOResponse)
-@limiter.limit('10/minute', exempt_when=_is_authenticated)
+@limiter.limit('10/minute')
 async def apply_ipo_endpoint(
     payload: ApplyIPORequest,
     request: Request,
@@ -155,7 +152,7 @@ async def apply_ipo_endpoint(
 
 
 @app.post('/check-allotment', response_model=CheckAllotmentResponse)
-@limiter.limit('10/minute', exempt_when=_is_authenticated)
+@limiter.limit('10/minute')
 async def check_allotment_endpoint(
     payload: CheckAllotmentRequest,
     request: Request,
@@ -229,7 +226,7 @@ async def check_allotment_endpoint(
 
 
 @app.post('/portfolio', response_model=PortfolioResponse)
-@limiter.limit('10/minute', exempt_when=_is_authenticated)
+@limiter.limit('10/minute')
 async def portfolio_endpoint(
     payload: PortfolioRequest,
     request: Request,
@@ -293,7 +290,7 @@ async def portfolio_endpoint(
 
 
 @app.post('/test-login', response_model=TestLoginResponse)
-@limiter.limit('10/minute', exempt_when=_is_authenticated)
+@limiter.limit('10/minute')
 async def test_login_endpoint(
     payload: TestLoginRequest,
     request: Request,
@@ -347,13 +344,11 @@ async def test_login_endpoint(
         )
 
 
-@app.get('/dps', response_model=DpsResponse)
-@limiter.limit('10/minute', exempt_when=_is_authenticated)
+@app.get('/dps')
+@limiter.limit('10/minute')
 async def dps_endpoint(
     request: Request,
-) -> DpsResponse:
-    request_id = str(uuid.uuid4())
-    started = time.perf_counter()
+) -> JSONResponse:
     try:
         raw_items = fetch_dps()
         items = []
@@ -367,20 +362,7 @@ async def dps_endpoint(
             }
             if safe_item['id'] and safe_item['name'] and safe_item['code']:
                 items.append(safe_item)
-        return DpsResponse(
-            items=items,
-            count=len(items),
-            timestamp=utc_now_iso(),
-            request_id=request_id,
-            duration_ms=int((time.perf_counter() - started) * 1000),
-        )
+        return JSONResponse(content=items)
     except Exception:
         logger.exception('Unhandled error while fetching DPS list')
-        return DpsResponse(
-            items=[],
-            count=0,
-            timestamp=utc_now_iso(),
-            request_id=request_id,
-            duration_ms=int((time.perf_counter() - started) * 1000),
-            message='Failed to fetch DPS list.',
-        )
+        return JSONResponse(content=[])

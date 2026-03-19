@@ -161,13 +161,3 @@ class DpsItem(BaseModel):
     name: str
     code: str
 
-
-class DpsResponse(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    items: List[DpsItem]
-    count: int
-    timestamp: str
-    request_id: str
-    duration_ms: int
-    message: Optional[str] = None
