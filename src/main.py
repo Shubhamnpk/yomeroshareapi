@@ -93,9 +93,12 @@ async def https_enforcer(request: Request, call_next):
 
 @app.middleware('http')
 async def api_key_guard(request: Request, call_next):
+    path = request.url.path
+    if path in {'/', '/api', '/ui', '/health', '/docs', '/openapi.json'}:
+        return await call_next(request)
     header_key = request.headers.get('x-api-key')
-    if header_key and API_KEY and header_key != API_KEY:
-        return JSONResponse(status_code=401, content={'detail': 'API key is incorrect'})
+    if not header_key or not API_KEY or header_key != API_KEY:
+        return JSONResponse(status_code=401, content={'detail': 'Valid X-API-Key header required'})
     return await call_next(request)
 
 
