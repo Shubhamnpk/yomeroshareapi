@@ -197,23 +197,15 @@ async def _login(page, dp_id: str, username: str, password: str) -> None:
 
 
 async def _get_username(page) -> str:
+    await page.wait_for_selector('.user-profile.dropdown .profile-text', state='attached', timeout=15000)
+    await page.wait_for_timeout(1000)
     return await page.evaluate(
         """
         () => {
-            const selectors = [
-                '.user-profile-name--user-name span',
-                '.user-profile-name span',
-                '.user-name',
-                '.profile-text span',
-            ];
-            for (const sel of selectors) {
-                const el = document.querySelector(sel);
-                if (el) {
-                    const text = (el.textContent || '').replace(/\\s+/g, ' ').trim();
-                    if (text && !text.toLowerCase().includes('mero share profile')) {
-                        return text;
-                    }
-                }
+            const el = document.querySelector('.user-profile.dropdown .user-profile-name span');
+            if (el) {
+                const text = (el.textContent || '').replace(/\\s+/g, ' ').trim();
+                if (text) return text;
             }
             return 'User';
         }
