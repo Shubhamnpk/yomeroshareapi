@@ -796,6 +796,7 @@ async def apply_ipo_endpoint(
             timestamp=utc_now_iso(),
             request_id=request_id,
             duration_ms=int((time.perf_counter() - started) * 1000),
+            user_name=result.user_name,
         )
     except CaptchaRequiredError as exc:
         return ApplyIPOResponse(
@@ -862,6 +863,7 @@ async def check_allotment_endpoint(
             timestamp=utc_now_iso(),
             request_id=request_id,
             duration_ms=int((time.perf_counter() - started) * 1000),
+            user_name=result.user_name,
         )
     except AutomationFailedError as exc:
         return CheckAllotmentResponse(
@@ -938,6 +940,7 @@ async def portfolio_endpoint(
             duration_ms=int((time.perf_counter() - started) * 1000),
             total_positions=total_positions,
             total_units=total_units,
+            user_name=result.user_name,
         )
     except AutomationFailedError as exc:
         return PortfolioResponse(
@@ -997,6 +1000,7 @@ async def test_login_endpoint(
             timestamp=utc_now_iso(),
             request_id=request_id,
             duration_ms=int((time.perf_counter() - started) * 1000),
+            user_name=result.user_name,
         )
     except AutomationFailedError as exc:
         return TestLoginResponse(

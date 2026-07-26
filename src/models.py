@@ -44,6 +44,7 @@ class ApplyIPOResponse(BaseModel):
     timestamp: str
     request_id: str
     duration_ms: int
+    user_name: str = ''
 
 
 class CheckAllotmentRequest(BaseModel):
@@ -80,6 +81,7 @@ class CheckAllotmentResponse(BaseModel):
     message: Optional[str] = None
     request_id: str
     duration_ms: int
+    user_name: str = ''
 
 
 class PortfolioRequest(BaseModel):
@@ -123,6 +125,7 @@ class PortfolioResponse(BaseModel):
     duration_ms: int
     total_positions: Optional[int] = None
     total_units: Optional[float] = None
+    user_name: str = ''
 
 
 class TestLoginRequest(BaseModel):
@@ -162,6 +165,7 @@ class TestLoginResponse(BaseModel):
     timestamp: str
     request_id: str
     duration_ms: int
+    user_name: str = ''
 
 
 class DpsItem(BaseModel):

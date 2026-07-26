@@ -87,6 +87,7 @@ class AutomationResult:
     success: bool
     message: str
     application_id: Optional[str] = None
+    user_name: str = ''
 
 
 @dataclass
@@ -95,18 +96,21 @@ class CheckAllotmentResult:
     is_allotted: bool
     allotted_quantity: str
     details: Dict[str, str]
+    user_name: str = ''
 
 
 @dataclass
 class PortfolioResult:
     portfolio: List[Dict[str, object]]
     message: Optional[str] = None
+    user_name: str = ''
 
 
 @dataclass
 class TestLoginResult:
     success: bool
     message: str
+    user_name: str = ''
 
 
 async def _detect_captcha(page) -> bool:
@@ -192,10 +196,93 @@ async def _login(page, dp_id: str, username: str, password: str) -> None:
         raise AutomationFailedError(error_msg or 'Login failed or timed out. Check credentials.')
 
 
+async def _get_username(page) -> str:
+    return await page.evaluate(
+        """
+        () => {
+            const selectors = [
+                '.user-profile-name--user-name span',
+                '.user-profile-name span',
+                '.user-name',
+                '.profile-text span',
+            ];
+            for (const sel of selectors) {
+                const el = document.querySelector(sel);
+                if (el) {
+                    const text = (el.textContent || '').replace(/\\s+/g, ' ').trim();
+                    if (text && !text.toLowerCase().includes('mero share profile')) {
+                        return text;
+                    }
+                }
+            }
+            return 'User';
+        }
+        """
+    )
+
+
+async def _logout(page) -> None:
+    try:
+        direct_selectors = [
+            'a[href*="logout" i]',
+            'a[href*="signout" i]',
+            'a[href*="sign-out" i]',
+            '.logout-btn',
+            '.btn-logout',
+            '#logout',
+        ]
+        for sel in direct_selectors:
+            try:
+                el = await page.query_selector(sel)
+                if el:
+                    await el.click()
+                    await page.wait_for_timeout(1000)
+                    return
+            except Exception:
+                continue
+
+        toggle_selectors = [
+            '.user-profile-name',
+            '.user-name',
+            '.profile-icon',
+            '.dropdown-toggle',
+            '.nav-item.dropdown',
+        ]
+        for sel in toggle_selectors:
+            try:
+                el = await page.query_selector(sel)
+                if el:
+                    await el.click()
+                    await page.wait_for_timeout(1500)
+                    clicked = await page.evaluate(
+                        """
+                        () => {
+                            const items = document.querySelectorAll('button, a, li, .dropdown-item');
+                            for (const item of items) {
+                                const t = (item.textContent || '').toLowerCase().trim();
+                                if (t.includes('logout') || t.includes('sign out')) {
+                                    item.click();
+                                    return true;
+                                }
+                            }
+                            return false;
+                        }
+                        """
+                    )
+                    if clicked:
+                        await page.wait_for_timeout(1000)
+                        return
+            except Exception:
+                continue
+    except Exception:
+        pass
+
+
 async def apply_ipo(request: ApplyIPORequest) -> AutomationResult:
     async with async_playwright() as p:
         browser = await _launch_browser(p)
         page = await _create_page(browser)
+        user_name = ''
 
         try:
             # 1. Login
@@ -206,7 +293,6 @@ async def apply_ipo(request: ApplyIPORequest) -> AutomationResult:
             try:
                 await _select_dp(page, request.dp_id)
             except Exception:
-                # Fallback: press enter if select2 is flaky
                 await page.keyboard.press('Enter')
 
             await page.wait_for_selector('#username', state='visible', timeout=15000)
@@ -241,6 +327,8 @@ async def apply_ipo(request: ApplyIPORequest) -> AutomationResult:
                     """
                 )
                 raise AutomationFailedError(error_msg or 'Login failed or timed out. Check credentials.')
+
+            user_name = await _get_username(page)
 
             # 2. Navigate to My ASBA
             await page.goto('https://meroshare.cdsc.com.np/#/asba', wait_until='networkidle')
@@ -504,11 +592,12 @@ async def apply_ipo(request: ApplyIPORequest) -> AutomationResult:
                 match = re.search(r'(\d{4,})', success_msg)
                 if match:
                     application_id = match.group(1)
-                return AutomationResult(True, success_msg, application_id=application_id)
+                return AutomationResult(True, success_msg, application_id=application_id, user_name=user_name)
 
             raise AutomationFailedError(error_msg or 'Application failed at the final step.')
 
         finally:
+            await _logout(page)
             await browser.close()
 
 
@@ -519,6 +608,7 @@ async def check_allotment(dp_id: str, username: str, password: str, ipo_name: st
 
         try:
             await _login(page, dp_id, username, password)
+            user_name = await _get_username(page)
 
             await page.goto('https://meroshare.cdsc.com.np/#/asba', wait_until='networkidle')
 
@@ -671,8 +761,10 @@ async def check_allotment(dp_id: str, username: str, password: str, ipo_name: st
                 is_allotted=bool(report_data['isAllotted']),
                 allotted_quantity=str(report_data['allottedQuantity']),
                 details=report_data['allDetails'],
+                user_name=user_name,
             )
         finally:
+            await _logout(page)
             await browser.close()
 
 
@@ -683,6 +775,7 @@ async def get_portfolio(dp_id: str, username: str, password: str) -> PortfolioRe
 
         try:
             await _login(page, dp_id, username, password)
+            user_name = await _get_username(page)
 
             await page.goto('https://meroshare.cdsc.com.np/#/portfolio', wait_until='networkidle')
 
@@ -701,7 +794,7 @@ async def get_portfolio(dp_id: str, username: str, password: str) -> PortfolioRe
             )
 
             if is_table_empty:
-                return PortfolioResult(portfolio=[], message='No holdings found in your Mero Share portfolio.')
+                return PortfolioResult(portfolio=[], message='No holdings found in your Mero Share portfolio.', user_name=user_name)
 
             portfolio = await page.evaluate(
                 """
@@ -727,8 +820,9 @@ async def get_portfolio(dp_id: str, username: str, password: str) -> PortfolioRe
                 """
             )
 
-            return PortfolioResult(portfolio=portfolio)
+            return PortfolioResult(portfolio=portfolio, user_name=user_name)
         finally:
+            await _logout(page)
             await browser.close()
 
 
@@ -740,15 +834,9 @@ async def test_login(dp_id: str, username: str, password: str) -> TestLoginResul
         try:
             await _login(page, dp_id, username, password)
 
-            name = await page.evaluate(
-                """
-                () => {
-                    const el = document.querySelector('.user-name');
-                    return el && el.textContent ? el.textContent.trim() : 'User';
-                }
-                """
-            )
+            name = await _get_username(page)
+            await _logout(page)
 
-            return TestLoginResult(success=True, message=f'Login Successful! Welcome, {name}.')
+            return TestLoginResult(success=True, message=f'Login Successful! Welcome, {name}.', user_name=name)
         finally:
             await browser.close()
