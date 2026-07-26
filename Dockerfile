@@ -1,11 +1,11 @@
-FROM mcr.microsoft.com/playwright/python:v1.43.0-jammy AS builder
+FROM mcr.microsoft.com/playwright/python:v1.61.0-jammy AS builder
 
 WORKDIR /app
 COPY requirements.txt .
 RUN pip install --upgrade pip \
     && pip install --no-cache-dir --prefix=/install -r requirements.txt
 
-FROM mcr.microsoft.com/playwright/python:v1.43.0-jammy AS runtime
+FROM mcr.microsoft.com/playwright/python:v1.61.0-jammy AS runtime
 
 WORKDIR /app
 COPY requirements.txt .
