@@ -4,7 +4,7 @@ import re
 from dataclasses import dataclass
 from typing import Dict, List, Optional
 
-from playwright.async_api import async_playwright
+from playwright.async_api import async_playwright, Page, Browser
 
 from .models import ApplyIPORequest
 
@@ -15,6 +15,71 @@ class CaptchaRequiredError(Exception):
 
 class AutomationFailedError(Exception):
     pass
+
+
+BLOCKED_RESOURCE_TYPES = {"image", "font", "media", "stylesheet", "texttrack", "imageset"}
+BLOCKED_RESOURCE_DOMAINS = {
+    "google-analytics.com", "googletagmanager.com", "facebook.net",
+    "doubleclick.net", "hotjar.com", "newrelic.com",
+}
+
+CHROMIUM_ARGS = [
+    "--no-sandbox",
+    "--disable-setuid-sandbox",
+    "--disable-dev-shm-usage",
+    "--disable-gpu",
+    "--disable-extensions",
+    "--disable-background-networking",
+    "--disable-sync",
+    "--no-first-run",
+    "--disable-breakpad",
+    "--disable-component-extensions-with-background-pages",
+    "--disable-features=TranslateUI,BlinkGenPropertyTrees",
+    "--disable-ipc-flooding-protection",
+    "--mute-audio",
+]
+
+
+async def _setup_page(page: Page) -> None:
+    await page.set_viewport_size({"width": 1280, "height": 800})
+    await page.route(
+        "**/*",
+        lambda route: _handle_route(route),
+    )
+
+
+async def _handle_route(route) -> None:
+    request = route.request
+    resource_type = request.resource_type
+    if resource_type in BLOCKED_RESOURCE_TYPES:
+        await route.abort()
+        return
+    url = request.url
+    for domain in BLOCKED_RESOURCE_DOMAINS:
+        if domain in url:
+            await route.abort()
+            return
+    await route.continue_()
+
+
+async def _launch_browser(p) -> Browser:
+    browser = await p.chromium.launch(
+        headless=True,
+        args=CHROMIUM_ARGS,
+    )
+    return browser
+
+
+async def _create_page(browser: Browser) -> Page:
+    context = await browser.new_context(
+        user_agent="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+        viewport={"width": 1280, "height": 800},
+    )
+    page = await context.new_page()
+    await _setup_page(page)
+    page.set_default_timeout(30000)
+    page.set_default_navigation_timeout(60000)
+    return page
 
 
 @dataclass
@@ -129,14 +194,8 @@ async def _login(page, dp_id: str, username: str, password: str) -> None:
 
 async def apply_ipo(request: ApplyIPORequest) -> AutomationResult:
     async with async_playwright() as p:
-        browser = await p.chromium.launch(
-            headless=True,
-            args=['--no-sandbox', '--disable-setuid-sandbox'],
-        )
-        context = await browser.new_context()
-        page = await context.new_page()
-        page.set_default_timeout(30000)
-        page.set_default_navigation_timeout(60000)
+        browser = await _launch_browser(p)
+        page = await _create_page(browser)
 
         try:
             # 1. Login
@@ -450,20 +509,13 @@ async def apply_ipo(request: ApplyIPORequest) -> AutomationResult:
             raise AutomationFailedError(error_msg or 'Application failed at the final step.')
 
         finally:
-            await context.close()
             await browser.close()
 
 
 async def check_allotment(dp_id: str, username: str, password: str, ipo_name: str) -> CheckAllotmentResult:
     async with async_playwright() as p:
-        browser = await p.chromium.launch(
-            headless=True,
-            args=['--no-sandbox', '--disable-setuid-sandbox'],
-        )
-        context = await browser.new_context()
-        page = await context.new_page()
-        page.set_default_timeout(30000)
-        page.set_default_navigation_timeout(60000)
+        browser = await _launch_browser(p)
+        page = await _create_page(browser)
 
         try:
             await _login(page, dp_id, username, password)
@@ -621,20 +673,13 @@ async def check_allotment(dp_id: str, username: str, password: str, ipo_name: st
                 details=report_data['allDetails'],
             )
         finally:
-            await context.close()
             await browser.close()
 
 
 async def get_portfolio(dp_id: str, username: str, password: str) -> PortfolioResult:
     async with async_playwright() as p:
-        browser = await p.chromium.launch(
-            headless=True,
-            args=['--no-sandbox', '--disable-setuid-sandbox'],
-        )
-        context = await browser.new_context()
-        page = await context.new_page()
-        page.set_default_timeout(30000)
-        page.set_default_navigation_timeout(60000)
+        browser = await _launch_browser(p)
+        page = await _create_page(browser)
 
         try:
             await _login(page, dp_id, username, password)
@@ -684,20 +729,13 @@ async def get_portfolio(dp_id: str, username: str, password: str) -> PortfolioRe
 
             return PortfolioResult(portfolio=portfolio)
         finally:
-            await context.close()
             await browser.close()
 
 
 async def test_login(dp_id: str, username: str, password: str) -> TestLoginResult:
     async with async_playwright() as p:
-        browser = await p.chromium.launch(
-            headless=True,
-            args=['--no-sandbox', '--disable-setuid-sandbox'],
-        )
-        context = await browser.new_context()
-        page = await context.new_page()
-        page.set_default_timeout(30000)
-        page.set_default_navigation_timeout(60000)
+        browser = await _launch_browser(p)
+        page = await _create_page(browser)
 
         try:
             await _login(page, dp_id, username, password)
@@ -713,5 +751,4 @@ async def test_login(dp_id: str, username: str, password: str) -> TestLoginResul
 
             return TestLoginResult(success=True, message=f'Login Successful! Welcome, {name}.')
         finally:
-            await context.close()
             await browser.close()
