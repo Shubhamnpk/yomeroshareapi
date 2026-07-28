@@ -9,25 +9,106 @@ Production-ready microservice to automate Mero Share (Nepal CDSC) IPO applicatio
 - HTTPS enforcement
 - Stateless (no DB, no credential storage)
 - Dockerized deployment
+- Singleton Chromium browser with per-request isolated contexts
+
+## System Requirements
+
+### Minimum (single-user, low traffic)
+| Resource | Requirement |
+|---|---|
+| CPU | 1 core, 2+ GHz |
+| RAM | **1 GB** (512 MB for OS + ~250 MB for Chromium + overhead) |
+| Storage | 1 GB for Playwright browsers + dependencies |
+| Network | Stable internet (Mero Share is in Nepal; latency varies) |
+
+### Recommended (production, multiple users)
+| Resource | Requirement |
+|---|---|
+| CPU | 2+ cores, 2.5+ GHz |
+| RAM | **2 GB** (supports ~5-8 concurrent automations) |
+| Storage | 2 GB |
+| Network | Low-latency connection to Nepal CDSC servers |
+
+### Platform Support
+
+| Platform | Status | Notes |
+|---|---|---|
+| **Docker** (Linux amd64) | Supported | Uses playwright/python:jammy image |
+| **Railway** | Supported | Builds from Dockerfile directly |
+| **Fly.io** | Compatible | Needs sufficient /dev/shm (use --disable-dev-shm-usage) |
+| **Heroku** | Possible | Requires container registry |
+| **Kubernetes** | Good fit | Singleton browser per pod, scale horizontally |
+| **Windows** | Dev only | Not recommended for production |
+| **macOS** | Dev only | Not recommended for production |
+
+## Architecture
+
+### Browser Lifecycle
+
+```
+Server start
+    |
+    v
+init_browser()  --  Launches ONE Chromium (headless) on startup
+    |                    Takes ~2s, uses ~80 MB base
+    |
+    v
+User Request A  -->  create_context()  -->  Isolated context A  -->  close context
+User Request B  -->  create_context()  -->  Isolated context B  -->  close context
+    |
+    v
+Server stop
+    |
+    v
+close_browser()  --  Kills Chromium process
+```
+
+- **One browser** lives as long as the server
+- **Per-request contexts** are fully isolated (cookies, localStorage, JS state)
+- **Semaphore** (max 5) prevents hammering Mero Share
+- **Unnecessary resources blocked**: images, fonts, media, tracking domains
+
+### Memory Comparison
+
+| Scenario | Memory | Notes |
+|---|---|---|
+| Cold start (no users) | ~80 MB | Browser loaded, idle |
+| 1 active request | ~95 MB | Browser + 1 context |
+| 5 concurrent requests | ~150 MB | Browser + 5 contexts |
+| Old approach (per-request browser) | ~440 MB / request | Unusable beyond 2 concurrent |
+
+### Performance
+
+| Operation | Average Time | Notes |
+|---|---|---|
+| Login (Mero Share) | 3-8 s | Depends on Mero Share server response |
+| Portfolio | 4-7 s | Includes login + navigation |
+| Apply IPO | 10-30 s | Multi-step form + PIN submission |
+| Browser launch (now eliminated) | 2-3 s | Was incurred per request before singleton |
+
+> Mero Share rate-limits rapid requests. Maintain **>=5s gap** between requests to avoid errors.
 
 ## Project Structure
+
 ```
 Dockerfile
 docker-compose.yml
 requirements.txt
 .env.example
+.gitignore
 src/
-  main.py
-  models.py
-  meroshare.py
-  utils.py
-README.md
-dps.json
-scrape_dps.py
-test.py
+  __init__.py
+  main.py           -- FastAPI app, startup/shutdown events
+  browser.py        -- Singleton Chromium manager
+  meroshare.py      -- Automation logic (login, IPO, portfolio)
+  models.py         -- Pydantic request/response models
+  utils.py          -- DPS fetching, time helpers
+scrape_dps.py       -- Utility to scrape DP list from login page
+test.py             -- CLI test script
 ```
 
 ## Setup
+
 1. Create an `.env` file from `.env.example` and set your API key.
 2. Build and run:
 
@@ -37,10 +118,21 @@ docker-compose up --build
 
 The API listens on port `8000`.
 
+### Local Development (without Docker)
+
+```bash
+python -m venv .venv
+.venv\Scripts\activate    # Windows
+pip install -r requirements.txt
+playwright install chromium
+python -m uvicorn src.main:app --host 0.0.0.0 --port 8000
+```
+
 ## Railway Deployment
+
 Railway can build directly from this Dockerfile.
 1. Push this repo to GitHub.
-2. In Railway, create a new project and select “Deploy from GitHub repo”.
+2. In Railway, create a new project and select "Deploy from GitHub repo".
 3. Railway detects the Dockerfile automatically and builds the service.
 4. Set environment variables in Railway:
    - `API_KEY` (optional but recommended)
@@ -51,10 +143,18 @@ After deployment, open the service URL and visit:
 - `/` for the landing page
 - `/api` for the API index
 
-## Quick CLI Test
-Use the included `test.py` script to hit endpoints without extra tools.
+## Environment Variables
 
-Example:
+| Variable | Default | Description |
+|---|---|---|
+| `API_KEY` | - | Secret key for authenticated access |
+| `DPS_URL` | Official CDSC URL | Override DPS source (comma-separated) |
+| `ALLOW_HTTP` | `0` | Set to `1` to allow HTTP (dev only) |
+| `ENV` | `production` | Set to `development` to allow HTTP |
+| `PORT` | `8000` | Server port (Railway sets this automatically) |
+
+## Quick CLI Test
+
 ```bash
 python test.py --test-health
 python test.py --test-dps
@@ -65,6 +165,7 @@ python test.py --test-apply --dp-id 13000 --username USER --password PASS --crn 
 ```
 
 ## HTTPS Enforcement
+
 This service **requires HTTPS**. In production, put it behind an HTTPS reverse proxy (Nginx, Caddy, Traefik, Cloudflare, etc.) and pass `X-Forwarded-Proto: https`.
 
 For local development, you can allow HTTP by setting:
@@ -101,7 +202,6 @@ This writes `dps.json`, which `/dps` will use automatically.
 ### Health Check
 `GET /health`
 
-Response:
 ```json
 { "status": "ok", "timestamp": "2026-03-19T00:00:00Z" }
 ```
@@ -109,12 +209,8 @@ Response:
 ### Get DPs
 `GET /dps`
 
-Headers:
-```
-X-API-Key: your-secret-key
-```
+Headers: `X-API-Key: your-secret-key`
 
-Response:
 ```json
 [
   { "id": "13100", "name": "NIC ASIA Bank Limited", "code": "NIC" }
@@ -124,233 +220,67 @@ Response:
 ### Apply IPO
 `POST /apply-ipo`
 
-Headers:
-```
-X-API-Key: your-secret-key
-```
+Headers: `X-API-Key: your-secret-key`
 
 Parameters:
-- `dp_id` (string, required) — Depository Participant ID
-- `username` (string, required) — Mero Share username
-- `password` (string, required) — Mero Share password
-- `crn` (string, required) — CRN number
-- `pin` (string, required) — Transaction PIN
-- `ipo_details.company_share_id` (string, required) — IPO company name or share ID
-- `ipo_details.units` (integer, required) — Kitta (units)
-- `ipo_details.bank` (string, required) — Bank name for ASBA
+- `dp_id` (string, required) -- Depository Participant ID
+- `username` (string, required) -- Mero Share username
+- `password` (string, required) -- Mero Share password
+- `crn` (string, required) -- CRN number
+- `pin` (string, required) -- Transaction PIN
+- `ipo_details.company_share_id` (string, required) -- IPO company name or share ID
+- `ipo_details.units` (integer, required) -- Kitta (units)
+- `ipo_details.bank` (string, required) -- Bank name for ASBA
 
-Request body:
 ```json
 {
-  "dp_id": "string",
-  "username": "string",
-  "password": "string",
-  "crn": "string",
-  "pin": "string",
+  "dp_id": "13000",
+  "username": "mero_user",
+  "password": "mero_pass",
+  "crn": "1234567890",
+  "pin": "1234",
   "ipo_details": {
-    "company_share_id": "string",
+    "company_share_id": "ACME Laghubitta",
     "units": 10,
-    "bank": "string"
+    "bank": "NIC ASIA Bank Limited"
   }
 }
-```
-
-Response:
-```json
-{
-  "status": "success",
-  "message": "Application submitted successfully",
-  "application_id": "123456",
-  "details": { "result": "submitted" },
-  "timestamp": "2026-03-19T00:00:00Z",
-  "request_id": "e4c7d6f1-9c1a-4c7a-9a3d-5f5a9b6f27b0",
-  "duration_ms": 8243
-}
-```
-
-Example:
-```bash
-curl -X POST http://localhost:8000/apply-ipo \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: your-secret-key" \
-  -d '{
-    "dp_id": "13000",
-    "username": "mero_user",
-    "password": "mero_pass",
-    "crn": "1234567890",
-    "pin": "1234",
-    "ipo_details": {
-      "company_share_id": "ACME Laghubitta",
-      "units": 10,
-      "bank": "NIC ASIA Bank Limited"
-    }
-  }'
 ```
 
 ### Check Allotment
 `POST /check-allotment`
 
-Headers:
-```
-X-API-Key: your-secret-key
-```
+Headers: `X-API-Key: your-secret-key`
 
-Parameters:
-- `dp_id` (string, required) — Depository Participant ID
-- `username` (string, required) — Mero Share username
-- `password` (string, required) — Mero Share password
-- `ipo_name` (string, required) — IPO name or company share ID
+Parameters: `dp_id`, `username`, `password`, `ipo_name`
 
-Request body:
-```json
-{
-  "dp_id": "string",
-  "username": "string",
-  "password": "string",
-  "ipo_name": "string"
-}
-```
-You can also send `{ "credentials": { "dpId": "...", "username": "...", "password": "..." }, "ipoName": "..." }` for compatibility with the existing Puppeteer routes.
-
-Response:
-```json
-{
-  "success": true,
-  "status": "Application Verified (Result Pending)",
-  "is_allotted": false,
-  "allotted_quantity": "0",
-  "all_details": {},
-  "timestamp": "2026-03-19T00:00:00Z",
-  "request_id": "e4c7d6f1-9c1a-4c7a-9a3d-5f5a9b6f27b0",
-  "duration_ms": 5102
-}
-```
-
-Example:
-```bash
-curl -X POST http://localhost:8000/check-allotment \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: your-secret-key" \
-  -d '{
-    "credentials": {
-      "dpId": "13000",
-      "username": "mero_user",
-      "password": "mero_pass"
-    },
-    "ipoName": "ACME Laghubitta"
-  }'
-```
+You can also send `{ "credentials": { "dpId": "...", "username": "...", "password": "..." }, "ipoName": "..." }` for compatibility.
 
 ### Portfolio
 `POST /portfolio`
 
-Headers:
-```
-X-API-Key: your-secret-key
-```
+Headers: `X-API-Key: your-secret-key`
 
-Parameters:
-- `dp_id` (string, required) — Depository Participant ID
-- `username` (string, required) — Mero Share username
-- `password` (string, required) — Mero Share password
-
-Request body:
-```json
-{
-  "dp_id": "string",
-  "username": "string",
-  "password": "string"
-}
-```
-You can also send `{ "credentials": { "dpId": "...", "username": "...", "password": "..." } }` for compatibility.
-
-Response:
-```json
-{
-  "success": true,
-  "portfolio": [
-    { "symbol": "ABC", "units": 10, "current_price": 100, "buy_price": 0 }
-  ],
-  "timestamp": "2026-03-19T00:00:00Z",
-  "request_id": "e4c7d6f1-9c1a-4c7a-9a3d-5f5a9b6f27b0",
-  "duration_ms": 2920,
-  "total_positions": 1,
-  "total_units": 10
-}
-```
-
-Example:
-```bash
-curl -X POST http://localhost:8000/portfolio \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: your-secret-key" \
-  -d '{
-    "credentials": {
-      "dpId": "13000",
-      "username": "mero_user",
-      "password": "mero_pass"
-    }
-  }'
-```
+Parameters: `dp_id`, `username`, `password`
 
 ### Test Login
 `POST /test-login`
 
-Headers:
-```
-X-API-Key: your-secret-key
-```
+Headers: `X-API-Key: your-secret-key`
 
-Parameters:
-- `dp_id` (string, required) — Depository Participant ID
-- `username` (string, required) — Mero Share username
-- `password` (string, required) — Mero Share password
+Parameters: `dp_id`, `username`, `password`
 
-Request body:
-```json
-{
-  "dp_id": "string",
-  "username": "string",
-  "password": "string"
-}
-```
-You can also send `{ "credentials": { "dpId": "...", "username": "...", "password": "..." } }` for compatibility.
-
-Response:
-```json
-{
-  "success": true,
-  "message": "Login Successful! Welcome, User.",
-  "timestamp": "2026-03-19T00:00:00Z",
-  "request_id": "e4c7d6f1-9c1a-4c7a-9a3d-5f5a9b6f27b0",
-  "duration_ms": 1850
-}
-```
-
-Example:
-```bash
-curl -X POST http://localhost:8000/test-login \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: your-secret-key" \
-  -d '{
-    "credentials": {
-      "dpId": "13000",
-      "username": "mero_user",
-      "password": "mero_pass"
-    }
-  }'
-```
-
-### CAPTCHA Handling
+## CAPTCHA Handling
 If a CAPTCHA input field is detected, the service returns an error for manual handling.
 
-### Company Selection Note
-The `company_share_id` field is matched against visible text and attributes in the IPO list. If you pass the company name instead of a numeric ID, it will still match using fuzzy name normalization (as in the working Puppeteer flow).
+## Company Selection Note
+The `company_share_id` field is matched against visible text and attributes in the IPO list. If you pass the company name instead of a numeric ID, it will still match using fuzzy name normalization.
 
-### Bank Selection Note
-The service tries to match the provided bank name first. If no match is found, it falls back to the first available bank option (same behavior as the reference Puppeteer code).
+## Bank Selection Note
+The service tries to match the provided bank name first. If no match is found, it falls back to the first available bank option.
 
 ## Notes
 - The service never stores credentials.
 - No sensitive data is logged.
 - Timeout per request is 120 seconds.
+- Mero Share rate-limits rapid logins; allow 5+ seconds between requests.

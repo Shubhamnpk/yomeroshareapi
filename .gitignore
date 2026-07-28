@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environment
+.venv/
+venv/
+env/
+
+# Environment
+.env
+.env.local
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project specific
+benchmark.py
+dps.json
+src/__pycache__/__init__.cpython-313.pyc
+src/__pycache__/meroshare.cpython-313.pyc
+src/__pycache__/models.cpython-313.pyc

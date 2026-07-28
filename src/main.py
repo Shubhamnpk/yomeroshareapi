@@ -16,6 +16,7 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 from slowapi.util import get_remote_address
 
+from .browser import init_browser, close_browser, is_browser_healthy
 from .meroshare import (
     AutomationFailedError,
     CaptchaRequiredError,
@@ -53,6 +54,16 @@ if not API_KEY:
 REQUEST_TIMEOUT_SECONDS = 120
 
 app = FastAPI(title='Mero Share IPO Automation Service', version='1.0.0')
+
+
+@app.on_event('startup')
+async def startup():
+    await init_browser()
+
+
+@app.on_event('shutdown')
+async def shutdown():
+    await close_browser()
 
 def _rate_limit_key(request: Request) -> str:
     header_key = request.headers.get('x-api-key')
@@ -106,7 +117,12 @@ async def api_key_guard(request: Request, call_next):
 
 @app.get('/health')
 async def health() -> dict:
-    return {'status': 'ok', 'timestamp': utc_now_iso()}
+    browser_ok = await is_browser_healthy()
+    return {
+        'status': 'ok' if browser_ok else 'degraded',
+        'browser': 'healthy' if browser_ok else 'unhealthy',
+        'timestamp': utc_now_iso(),
+    }
 
 
 @app.get('/', response_class=HTMLResponse)
