@@ -28,7 +28,7 @@ env/
 Thumbs.db
 
 # Project specific
-benchmark.py
+/benchmark.py
 dps.json
 src/__pycache__/__init__.cpython-313.pyc
 src/__pycache__/meroshare.cpython-313.pyc
